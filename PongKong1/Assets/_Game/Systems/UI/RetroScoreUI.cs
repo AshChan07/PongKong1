@@ -35,7 +35,7 @@ public class RetroScoreUI : MonoBehaviour
     private void Start()
     {
         if (scoreManager == null)
-            scoreManager = FindObjectOfType<ScoreManager>();
+            scoreManager = FindFirstObjectByType<ScoreManager>();
 
         if (scoreManager == null)
         {

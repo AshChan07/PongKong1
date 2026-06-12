@@ -11,6 +11,7 @@ public class BallController : MonoBehaviour
 
     [Header("Arena")]
     [SerializeField] private float arenaHeight = 10f;
+    [SerializeField] private float arenaWidth = 18f;
 
     [Header("Bounce")]
     [SerializeField] private float deflectionMultiplier = 1.5f;
@@ -22,6 +23,10 @@ public class BallController : MonoBehaviour
     [SerializeField] private Vector2GameEvent onBallLaunched;
     [SerializeField] private ContactDataGameEvent onBallHitLedge;
     [SerializeField] private IntGameEvent onScoreChanged;
+    [SerializeField] private PlayerSideGameEvent onPointScored;
+
+    [Header("References")]
+    [SerializeField] private ScoreManager scoreManager;
 
     private Rigidbody2D rb;
     private float currentSpeed;
@@ -29,11 +34,15 @@ public class BallController : MonoBehaviour
     private Vector2 pendingNormal;
     private float pendingHitOffset;
     private PlayerSide pendingLedgeSide;
+    private bool isRespawning;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         currentSpeed = baseSpeed;
+
+        if (scoreManager == null)
+            scoreManager = FindFirstObjectByType<ScoreManager>();
     }
 
     private void OnEnable()
@@ -60,7 +69,6 @@ public class BallController : MonoBehaviour
 
     private void FixedUpdate()
     {
-
         if (hasPendingBounce)
         {
             ApplyCustomBounce();
@@ -70,6 +78,32 @@ public class BallController : MonoBehaviour
         if (rb.linearVelocity.sqrMagnitude > 0.01f)
         {
             rb.linearVelocity = rb.linearVelocity.normalized * currentSpeed;
+        }
+
+        float halfHeight = arenaHeight * 0.5f;
+        Vector2 pos = rb.position;
+        Vector2 vel = rb.linearVelocity;
+
+        if (pos.y > halfHeight)
+        {
+            pos.y = halfHeight;
+            vel.y = -Mathf.Abs(vel.y);
+        }
+        else if (pos.y < -halfHeight)
+        {
+            pos.y = -halfHeight;
+            vel.y = Mathf.Abs(vel.y);
+        }
+
+        rb.position = pos;
+        rb.linearVelocity = vel;
+
+        float halfWidth = arenaWidth * 0.5f;
+        if (!isRespawning && Mathf.Abs(pos.x) > halfWidth)
+        {
+            PlayerSide scorer = pos.x > 0f ? PlayerSide.P1 : PlayerSide.P2;
+            RecordScore(scorer);
+            ResetAndRespawn();
         }
     }
 
@@ -89,13 +123,23 @@ public class BallController : MonoBehaviour
 
     private IEnumerator RespawnSequence()
     {
+        isRespawning = true;
         rb.linearVelocity = Vector2.zero;
         transform.position = Vector2.zero;
         rb.simulated = false;
         yield return new WaitForSeconds(respawnDelay);
         rb.simulated = true;
         currentSpeed = baseSpeed;
+        isRespawning = false;
         Launch();
+    }
+
+    private void RecordScore(PlayerSide scorer)
+    {
+        if (onPointScored != null)
+            onPointScored.Raise(scorer);
+        else if (scoreManager != null)
+            scoreManager.RecordScore(scorer);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
