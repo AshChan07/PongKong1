@@ -22,39 +22,56 @@ public class BallController : MonoBehaviour
     [Header("Events")]
     [SerializeField] private Vector2GameEvent onBallLaunched;
     [SerializeField] private ContactDataGameEvent onBallHitLedge;
-    [SerializeField] private IntGameEvent onScoreChanged;
     [SerializeField] private PlayerSideGameEvent onPointScored;
+    [SerializeField] private PlayerSideGameEvent onBallEnteredCourt;
+    [SerializeField] private PlayerSideGameEvent onBallExitedCourt;
 
     [Header("References")]
     [SerializeField] private ScoreManager scoreManager;
+    [SerializeField] private SpriteRenderer spriteRenderer;
 
     private Rigidbody2D rb;
-    private float currentSpeed;
+    private float speedMultiplier = 1f;
+    private float flatSpeedBonus;
     private bool hasPendingBounce;
     private Vector2 pendingNormal;
     private float pendingHitOffset;
     private PlayerSide pendingLedgeSide;
     private bool isRespawning;
+    private bool matchOver;
+    private PlayerSide currentCourt;
+    private bool courtAssigned;
+    private bool isDestroyerActive;
+    private bool isVanishActive;
+    private bool isVisible = true;
+
+    public bool IsDestroyerActive => isDestroyerActive;
+    public bool IsVanishActive => isVanishActive;
+    public bool IsVisible => isVisible;
+    public PlayerSide CurrentCourt => currentCourt;
+    public bool HasCourt => courtAssigned;
+    public bool IsRespawning => isRespawning;
+
+    private float FormulaSpeed
+    {
+        get
+        {
+            int total = scoreManager != null ? scoreManager.TotalMatchScore : 0;
+            return Mathf.Min(baseSpeed + total * speedScalingFactor, maxSpeed);
+        }
+    }
+
+    private float EffectiveSpeed => Mathf.Min((FormulaSpeed + flatSpeedBonus) * speedMultiplier, maxSpeed);
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
-        currentSpeed = baseSpeed;
+
+        if (spriteRenderer == null)
+            spriteRenderer = GetComponent<SpriteRenderer>();
 
         if (scoreManager == null)
             scoreManager = FindFirstObjectByType<ScoreManager>();
-    }
-
-    private void OnEnable()
-    {
-        if (onScoreChanged != null)
-            onScoreChanged.OnRaised += HandleScoreChanged;
-    }
-
-    private void OnDisable()
-    {
-        if (onScoreChanged != null)
-            onScoreChanged.OnRaised -= HandleScoreChanged;
     }
 
     private void Start()
@@ -62,13 +79,11 @@ public class BallController : MonoBehaviour
         Launch();
     }
 
-    private void HandleScoreChanged(int totalScore)
-    {
-        currentSpeed = Mathf.Min(baseSpeed + totalScore * speedScalingFactor, maxSpeed);
-    }
-
     private void FixedUpdate()
     {
+        if (isRespawning || matchOver)
+            return;
+
         if (hasPendingBounce)
         {
             ApplyCustomBounce();
@@ -76,9 +91,7 @@ public class BallController : MonoBehaviour
         }
 
         if (rb.linearVelocity.sqrMagnitude > 0.01f)
-        {
-            rb.linearVelocity = rb.linearVelocity.normalized * currentSpeed;
-        }
+            rb.linearVelocity = rb.linearVelocity.normalized * EffectiveSpeed;
 
         float halfHeight = arenaHeight * 0.5f;
         Vector2 pos = rb.position;
@@ -98,12 +111,70 @@ public class BallController : MonoBehaviour
         rb.position = pos;
         rb.linearVelocity = vel;
 
+        TrackCourt(pos);
+
         float halfWidth = arenaWidth * 0.5f;
-        if (!isRespawning && Mathf.Abs(pos.x) > halfWidth)
+        if (Mathf.Abs(pos.x) > halfWidth)
         {
+            if (!isVisible)
+            {
+                vel.x = -vel.x;
+                pos.x = Mathf.Clamp(pos.x, -halfWidth, halfWidth);
+                rb.position = pos;
+                rb.linearVelocity = vel;
+                return;
+            }
+
             PlayerSide scorer = pos.x > 0f ? PlayerSide.P1 : PlayerSide.P2;
             RecordScore(scorer);
-            ResetAndRespawn();
+
+            if (scoreManager != null && scoreManager.IsGameOver)
+                StopForMatchEnd();
+            else
+                ResetAndRespawn();
+        }
+    }
+
+    private void StopForMatchEnd()
+    {
+        matchOver = true;
+        rb.linearVelocity = Vector2.zero;
+        rb.simulated = false;
+        rb.position = Vector2.zero;
+        transform.position = Vector2.zero;
+        ClearBallState();
+    }
+
+    public void Restart()
+    {
+        StopAllCoroutines();
+        matchOver = false;
+        isRespawning = false;
+        courtAssigned = false;
+        rb.simulated = true;
+        rb.position = Vector2.zero;
+        transform.position = Vector2.zero;
+        ClearBallState();
+        Launch();
+    }
+
+    private void TrackCourt(Vector2 pos)
+    {
+        PlayerSide newCourt = pos.x < 0f ? PlayerSide.P1 : PlayerSide.P2;
+
+        if (!courtAssigned)
+        {
+            currentCourt = newCourt;
+            courtAssigned = true;
+            onBallEnteredCourt?.Raise(newCourt);
+            return;
+        }
+
+        if (newCourt != currentCourt)
+        {
+            onBallExitedCourt?.Raise(currentCourt);
+            currentCourt = newCourt;
+            onBallEnteredCourt?.Raise(newCourt);
         }
     }
 
@@ -112,7 +183,7 @@ public class BallController : MonoBehaviour
         float xDir = Random.value >= 0.5f ? 1f : -1f;
         float yDir = Random.Range(-1f, 1f);
         Vector2 direction = new Vector2(xDir, yDir).normalized;
-        rb.linearVelocity = direction * currentSpeed;
+        rb.linearVelocity = direction * FormulaSpeed;
         onBallLaunched?.Raise(direction);
     }
 
@@ -127,11 +198,25 @@ public class BallController : MonoBehaviour
         rb.linearVelocity = Vector2.zero;
         transform.position = Vector2.zero;
         rb.simulated = false;
+
+        ClearBallState();
+
         yield return new WaitForSeconds(respawnDelay);
+
         rb.simulated = true;
-        currentSpeed = baseSpeed;
+        courtAssigned = false;
         isRespawning = false;
         Launch();
+    }
+
+    private void ClearBallState()
+    {
+        speedMultiplier = 1f;
+        flatSpeedBonus = 0f;
+        isDestroyerActive = false;
+        isVanishActive = false;
+        isVisible = true;
+        SetVisible(true);
     }
 
     private void RecordScore(PlayerSide scorer)
@@ -173,7 +258,7 @@ public class BallController : MonoBehaviour
             outAngle = Mathf.PI - outAngle;
 
         Vector2 outDirection = new Vector2(Mathf.Cos(outAngle), Mathf.Sin(outAngle));
-        rb.linearVelocity = outDirection * currentSpeed;
+        rb.linearVelocity = outDirection * EffectiveSpeed;
 
         var data = new ContactData
         {
@@ -183,5 +268,42 @@ public class BallController : MonoBehaviour
             ledgeSide = pendingLedgeSide
         };
         onBallHitLedge?.Raise(data);
+    }
+
+    public void ApplySpeedMultiplier(float multiplier)
+    {
+        speedMultiplier *= multiplier;
+    }
+
+    public void AddFlatSpeed(float amount)
+    {
+        flatSpeedBonus += amount;
+    }
+
+    public void SetDestroyerActive(bool active)
+    {
+        isDestroyerActive = active;
+    }
+
+    public void SetVanishActive(bool active)
+    {
+        isVanishActive = active;
+    }
+
+    public void SetVisible(bool visible)
+    {
+        isVisible = visible;
+        if (spriteRenderer != null)
+            spriteRenderer.enabled = visible;
+    }
+
+    public Vector2 GetPosition()
+    {
+        return rb.position;
+    }
+
+    public Vector2 GetVelocity()
+    {
+        return rb.linearVelocity;
     }
 }

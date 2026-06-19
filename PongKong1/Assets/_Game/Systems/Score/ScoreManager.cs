@@ -10,9 +10,13 @@ public class ScoreManager : MonoBehaviour
     [SerializeField] private int baseMissPoints = 2;
 
     [Header("Events")]
-    [SerializeField] private PlayerSideGameEvent onPointScored;
     [SerializeField] private IntGameEvent onScoreChanged;
     [SerializeField] private PlayerSideGameEvent onMatchEnd;
+    [SerializeField] private PointScoredDataGameEvent onPointScoredDetailed;
+
+    [Header("References")]
+    [SerializeField] private LedgeController p1Ledge;
+    [SerializeField] private LedgeController p2Ledge;
 
     private int p1Score;
     private int p2Score;
@@ -29,42 +33,74 @@ public class ScoreManager : MonoBehaviour
     public bool IsGameOver => isGameOver;
     public bool IsSuddenDeath => isSuddenDeath;
 
-    private void OnEnable()
-    {
-        if (onPointScored != null)
-            onPointScored.OnRaised += HandlePointScored;
-    }
-
-    private void OnDisable()
-    {
-        if (onPointScored != null)
-            onPointScored.OnRaised -= HandlePointScored;
-    }
-
-    private void HandlePointScored(PlayerSide scorer)
-    {
-        RecordScore(scorer);
-    }
-
     public void RecordScore(PlayerSide scorer)
+    {
+        RecordScore(scorer, false, false, false);
+    }
+
+    public void RecordScore(PlayerSide scorer, bool destroyerActive, bool vanishBonus, bool vanishPenalty)
     {
         if (isGameOver)
             return;
 
-        int points = baseMissPoints;
+        LedgeController missedLedge = scorer == PlayerSide.P1 ? p2Ledge : p1Ledge;
+        bool brokenLedge = missedLedge != null && missedLedge.IsBroken;
+
+        int points = CalculatePoints(destroyerActive, vanishBonus, brokenLedge);
+        int penalty = vanishPenalty ? 1 : 0;
+
         if (scorer == PlayerSide.P1)
         {
             p1Score += points;
             p1Spendable += points;
+            if (penalty > 0)
+            {
+                p2Score = Mathf.Max(0, p2Score - penalty);
+                p2Spendable = Mathf.Max(0, p2Spendable - penalty);
+            }
         }
         else
         {
             p2Score += points;
             p2Spendable += points;
+            if (penalty > 0)
+            {
+                p1Score = Mathf.Max(0, p1Score - penalty);
+                p1Spendable = Mathf.Max(0, p1Spendable - penalty);
+            }
         }
 
         onScoreChanged?.Raise(TotalMatchScore);
+
+        if (onPointScoredDetailed != null)
+        {
+            var data = new PointScoredData
+            {
+                scorer = scorer,
+                points = points,
+                isDestroyerActive = destroyerActive,
+                isVanishActive = vanishPenalty,
+                isBrokenLedge = brokenLedge
+            };
+            onPointScoredDetailed.Raise(data);
+        }
+
         CheckWinCondition();
+    }
+
+    private int CalculatePoints(bool destroyer, bool vanishBonus, bool brokenLedge)
+    {
+        if (vanishBonus && brokenLedge)
+            return 16;
+        if (vanishBonus)
+            return 8;
+        if (destroyer && brokenLedge)
+            return 8;
+        if (destroyer)
+            return 4;
+        if (brokenLedge)
+            return 4;
+        return baseMissPoints;
     }
 
     private void CheckWinCondition()
@@ -114,6 +150,11 @@ public class ScoreManager : MonoBehaviour
         }
 
         return false;
+    }
+
+    public int GetSpendable(PlayerSide player)
+    {
+        return player == PlayerSide.P1 ? p1Spendable : p2Spendable;
     }
 
     public void ResetMatch()

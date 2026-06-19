@@ -253,7 +253,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 260, y: 175}
+  m_AnchoredPosition: {x: 180, y: 165}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &29317801
@@ -369,8 +369,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   side: 1
   speed: 8
+  speedScalingFactor: 0.15
+  maxSpeed: 24
   yBoundary: 4.5
+  scoreManager: {fileID: 0}
   maxLives: 3
+  shortenPercent: 0.1
   stretchFactor: 0.03
   stretchSmoothness: 0.15
   onLedgeLifeChanged: {fileID: 11400000, guid: aac6b56504dd4cb79bcdb5ae51e9fe6c, type: 2}
@@ -686,9 +690,11 @@ MonoBehaviour:
   winScore: 20
   suddenDeathEnabled: 1
   baseMissPoints: 2
-  onPointScored: {fileID: 11400000, guid: 132a5caf9b138757691c785fef241819, type: 2}
   onScoreChanged: {fileID: 11400000, guid: 83050cd4cc21fa913a01a9dab822f382, type: 2}
   onMatchEnd: {fileID: 11400000, guid: 9c45e3b87d9e165a29781104bfed2608, type: 2}
+  onPointScoredDetailed: {fileID: 11400000, guid: 6de8c9b96efc964fb8a6e099a444fb85, type: 2}
+  p1Ledge: {fileID: 1292811725}
+  p2Ledge: {fileID: 172874344}
 --- !u!4 &351149102
 Transform:
   m_ObjectHideFlags: 0
@@ -745,9 +751,11 @@ MonoBehaviour:
   respawnDelay: 1.5
   onBallLaunched: {fileID: 11400000, guid: ffa5d22f11351de7d93ae10a8f19aa7c, type: 2}
   onBallHitLedge: {fileID: 11400000, guid: 2182d08f293d3fd4590be99711f58620, type: 2}
-  onScoreChanged: {fileID: 11400000, guid: 83050cd4cc21fa913a01a9dab822f382, type: 2}
   onPointScored: {fileID: 11400000, guid: 132a5caf9b138757691c785fef241819, type: 2}
+  onBallEnteredCourt: {fileID: 11400000, guid: f91e954e00ca04fd7b95f079b224c91b, type: 2}
+  onBallExitedCourt: {fileID: 11400000, guid: f0573672f10f85090816ea0e4ca00ca8, type: 2}
   scoreManager: {fileID: 351149101}
+  spriteRenderer: {fileID: 1098742098}
 --- !u!58 &1098742096
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -915,8 +923,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   side: 0
   speed: 8
+  speedScalingFactor: 0.15
+  maxSpeed: 24
   yBoundary: 4.5
+  scoreManager: {fileID: 0}
   maxLives: 3
+  shortenPercent: 0.1
   stretchFactor: 0.03
   stretchSmoothness: 0.15
   onLedgeLifeChanged: {fileID: 11400000, guid: aac6b56504dd4cb79bcdb5ae51e9fe6c, type: 2}
@@ -1192,6 +1204,66 @@ MonoBehaviour:
   enablePulse: 1
   pulseSpeed: 2
   pulseMinAlpha: 0.7
+--- !u!1 &1766083533
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1766083535}
+  - component: {fileID: 1766083534}
+  m_Layer: 0
+  m_Name: PowerUpManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1766083534
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1766083533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a17c56b63bd09ef29e1591d433bf298, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ball: {fileID: 1098742095}
+  p1Ledge: {fileID: 1292811725}
+  p2Ledge: {fileID: 172874344}
+  scoreManager: {fileID: 351149101}
+  dashSpeedMultiplier: 3
+  forceBounceMultiplier: 1.8
+  destroyerSpeedPerBounce: 1.5
+  vanishVisibleDuration: 1.2
+  vanishInvisibleDuration: 0.8
+  onBallEnteredCourt: {fileID: 11400000, guid: f91e954e00ca04fd7b95f079b224c91b, type: 2}
+  onBallExitedCourt: {fileID: 11400000, guid: f0573672f10f85090816ea0e4ca00ca8, type: 2}
+  onBallHitLedge: {fileID: 11400000, guid: 2182d08f293d3fd4590be99711f58620, type: 2}
+  onPointScored: {fileID: 11400000, guid: 132a5caf9b138757691c785fef241819, type: 2}
+  onPowerUpPrimed: {fileID: 11400000, guid: 73778f19c6885def4afb7bee7d45a321, type: 2}
+  onPowerUpActivated: {fileID: 11400000, guid: 21a50dc766f7c38bbafc23332e9b6cfb, type: 2}
+  onPowerUpDeactivated: {fileID: 11400000, guid: 95568c74c4c53d9d6a2b9684bc6740b0, type: 2}
+--- !u!4 &1766083535
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1766083533}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.2028178, y: 1.2727526, z: 0.09763822}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1909477314
 GameObject:
   m_ObjectHideFlags: 0
@@ -1463,7 +1535,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -260, y: 175}
+  m_AnchoredPosition: {x: -180, y: 165}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1660057539 &9223372036854775807
@@ -1477,3 +1549,4 @@ SceneRoots:
   - {fileID: 172874348}
   - {fileID: 1320091090}
   - {fileID: 29317804}
+  - {fileID: 1766083535}

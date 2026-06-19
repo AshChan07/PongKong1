@@ -38,10 +38,7 @@ public class RetroScoreUI : MonoBehaviour
             scoreManager = FindFirstObjectByType<ScoreManager>();
 
         if (scoreManager == null)
-        {
-            Debug.LogWarning("RetroScoreUI: ScoreManager not found in scene.");
             return;
-        }
 
         lastP1Score = scoreManager.P1Score;
         lastP2Score = scoreManager.P2Score;
@@ -68,6 +65,8 @@ public class RetroScoreUI : MonoBehaviour
     {
         if (scoreManager == null) return;
 
+        RefreshDisplay();
+
         int p1 = scoreManager.P1Score;
         int p2 = scoreManager.P2Score;
 
@@ -79,8 +78,6 @@ public class RetroScoreUI : MonoBehaviour
         lastP1Score = p1;
         lastP2Score = p2;
 
-        RefreshDisplay();
-
         if (p1Scored) StartFlash(p1ScoreText, ref p1FlashRoutine);
         if (p2Scored) StartFlash(p2ScoreText, ref p2FlashRoutine);
     }
@@ -88,9 +85,9 @@ public class RetroScoreUI : MonoBehaviour
     private void RefreshDisplay()
     {
         if (p1ScoreText != null)
-            p1ScoreText.text = $"P1: {scoreManager.P1Score:00}";
+            p1ScoreText.text = $"P1: {scoreManager.P1Score:00}  SP:{scoreManager.P1Spendable}";
         if (p2ScoreText != null)
-            p2ScoreText.text = $"P2: {scoreManager.P2Score:00}";
+            p2ScoreText.text = $"P2: {scoreManager.P2Score:00}  SP:{scoreManager.P2Spendable}";
         if (totalScoreText != null)
             totalScoreText.text = $"{scoreManager.TotalMatchScore}";
     }
