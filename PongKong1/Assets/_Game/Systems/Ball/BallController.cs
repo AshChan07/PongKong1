@@ -25,9 +25,19 @@ public class BallController : MonoBehaviour
     [SerializeField] private PlayerSideGameEvent onPointScored;
     [SerializeField] private PlayerSideGameEvent onBallEnteredCourt;
     [SerializeField] private PlayerSideGameEvent onBallExitedCourt;
+    [SerializeField] private ScoreStateGameEvent onScoreStateUpdated;
+    [SerializeField] private PlayerSideGameEvent onMatchEnd;
+    [SerializeField] private FloatGameEvent onBallSpeedMultiplierRequested;
+    [SerializeField] private FloatGameEvent onBallFlatSpeedRequested;
+    [SerializeField] private BoolGameEvent onBallDestroyerStateChanged;
+    [SerializeField] private BoolGameEvent onBallVanishStateChanged;
+    [SerializeField] private BoolGameEvent onBallVisibilityChanged;
+    [SerializeField] private GameEvent onMatchRestarted;
+    [SerializeField] private Vector2GameEvent onBallPositionUpdated;
+    [SerializeField] private GameEvent onBallHitBoundary;
+
 
     [Header("References")]
-    [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private SpriteRenderer spriteRenderer;
 
     private Rigidbody2D rb;
@@ -35,6 +45,8 @@ public class BallController : MonoBehaviour
     private float flatSpeedBonus;
     private bool hasPendingBounce;
     private Vector2 pendingNormal;
+    private Vector2 pendingIncident;
+    private Vector2 pendingContactPoint;
     private float pendingHitOffset;
     private PlayerSide pendingLedgeSide;
     private bool isRespawning;
@@ -44,6 +56,7 @@ public class BallController : MonoBehaviour
     private bool isDestroyerActive;
     private bool isVanishActive;
     private bool isVisible = true;
+    private int totalMatchPoints;
 
     public bool IsDestroyerActive => isDestroyerActive;
     public bool IsVanishActive => isVanishActive;
@@ -56,8 +69,7 @@ public class BallController : MonoBehaviour
     {
         get
         {
-            int total = scoreManager != null ? scoreManager.TotalMatchScore : 0;
-            return Mathf.Min(baseSpeed + total * speedScalingFactor, maxSpeed);
+            return Mathf.Min(baseSpeed + totalMatchPoints * speedScalingFactor, maxSpeed);
         }
     }
 
@@ -69,14 +81,61 @@ public class BallController : MonoBehaviour
 
         if (spriteRenderer == null)
             spriteRenderer = GetComponent<SpriteRenderer>();
-
-        if (scoreManager == null)
-            scoreManager = FindFirstObjectByType<ScoreManager>();
     }
 
     private void Start()
     {
         Launch();
+    }
+
+    private void OnEnable()
+    {
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised += HandleScoreState;
+        if (onMatchEnd != null)
+            onMatchEnd.OnRaised += HandleMatchEnd;
+        if (onBallSpeedMultiplierRequested != null)
+            onBallSpeedMultiplierRequested.OnRaised += ApplySpeedMultiplier;
+        if (onBallFlatSpeedRequested != null)
+            onBallFlatSpeedRequested.OnRaised += AddFlatSpeed;
+        if (onBallDestroyerStateChanged != null)
+            onBallDestroyerStateChanged.OnRaised += SetDestroyerActive;
+        if (onBallVanishStateChanged != null)
+            onBallVanishStateChanged.OnRaised += SetVanishActive;
+        if (onBallVisibilityChanged != null)
+            onBallVisibilityChanged.OnRaised += SetVisible;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised += Restart;
+    }
+
+    private void OnDisable()
+    {
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised -= HandleScoreState;
+        if (onMatchEnd != null)
+            onMatchEnd.OnRaised -= HandleMatchEnd;
+        if (onBallSpeedMultiplierRequested != null)
+            onBallSpeedMultiplierRequested.OnRaised -= ApplySpeedMultiplier;
+        if (onBallFlatSpeedRequested != null)
+            onBallFlatSpeedRequested.OnRaised -= AddFlatSpeed;
+        if (onBallDestroyerStateChanged != null)
+            onBallDestroyerStateChanged.OnRaised -= SetDestroyerActive;
+        if (onBallVanishStateChanged != null)
+            onBallVanishStateChanged.OnRaised -= SetVanishActive;
+        if (onBallVisibilityChanged != null)
+            onBallVisibilityChanged.OnRaised -= SetVisible;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised -= Restart;
+    }
+
+    private void HandleScoreState(ScoreStateData data)
+    {
+        totalMatchPoints = data.totalMatchScore;
+    }
+
+    private void HandleMatchEnd(PlayerSide winner)
+    {
+        StopForMatchEnd();
     }
 
     private void FixedUpdate()
@@ -101,11 +160,13 @@ public class BallController : MonoBehaviour
         {
             pos.y = halfHeight;
             vel.y = -Mathf.Abs(vel.y);
+            onBallHitBoundary?.Raise();
         }
         else if (pos.y < -halfHeight)
         {
             pos.y = -halfHeight;
             vel.y = Mathf.Abs(vel.y);
+            onBallHitBoundary?.Raise();
         }
 
         rb.position = pos;
@@ -113,30 +174,22 @@ public class BallController : MonoBehaviour
 
         TrackCourt(pos);
 
+        onBallPositionUpdated?.Raise(pos);
+
         float halfWidth = arenaWidth * 0.5f;
         if (Mathf.Abs(pos.x) > halfWidth)
         {
-            if (!isVisible)
-            {
-                vel.x = -vel.x;
-                pos.x = Mathf.Clamp(pos.x, -halfWidth, halfWidth);
-                rb.position = pos;
-                rb.linearVelocity = vel;
-                return;
-            }
-
             PlayerSide scorer = pos.x > 0f ? PlayerSide.P1 : PlayerSide.P2;
             RecordScore(scorer);
 
-            if (scoreManager != null && scoreManager.IsGameOver)
-                StopForMatchEnd();
-            else
+            if (!matchOver)
                 ResetAndRespawn();
         }
     }
 
     private void StopForMatchEnd()
     {
+        StopAllCoroutines();
         matchOver = true;
         rb.linearVelocity = Vector2.zero;
         rb.simulated = false;
@@ -223,8 +276,6 @@ public class BallController : MonoBehaviour
     {
         if (onPointScored != null)
             onPointScored.Raise(scorer);
-        else if (scoreManager != null)
-            scoreManager.RecordScore(scorer);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
@@ -236,12 +287,14 @@ public class BallController : MonoBehaviour
         if (ledge == null)
             return;
 
-        pendingNormal = collision.GetContact(0).normal;
+        ContactPoint2D contact = collision.GetContact(0);
+        pendingNormal = contact.normal;
+        pendingContactPoint = contact.point;
+        pendingIncident = rb.linearVelocity;
 
         float ledgeHeight = collision.collider.bounds.size.y;
-        float contactY = collision.GetContact(0).point.y;
         float ledgeCenterY = collision.collider.bounds.center.y;
-        pendingHitOffset = (contactY - ledgeCenterY) / (ledgeHeight * 0.5f);
+        pendingHitOffset = (contact.point.y - ledgeCenterY) / (ledgeHeight * 0.5f);
         pendingHitOffset = Mathf.Clamp(pendingHitOffset, -1f, 1f);
         pendingLedgeSide = ledge.Side;
         hasPendingBounce = true;
@@ -249,21 +302,17 @@ public class BallController : MonoBehaviour
 
     private void ApplyCustomBounce()
     {
-        float xDir = -Mathf.Sign(pendingNormal.x);
-        if (Mathf.Approximately(pendingNormal.x, 0f))
-            xDir = 1f;
+        float xSign = Mathf.Approximately(pendingNormal.x, 0f)
+            ? -Mathf.Sign(pendingIncident.x)
+            : Mathf.Sign(pendingNormal.x);
 
-        float outAngle = pendingHitOffset * deflectionMultiplier;
-        if (xDir < 0f)
-            outAngle = Mathf.PI - outAngle;
-
-        Vector2 outDirection = new Vector2(Mathf.Cos(outAngle), Mathf.Sin(outAngle));
+        Vector2 outDirection = new Vector2(xSign, pendingHitOffset * deflectionMultiplier).normalized;
         rb.linearVelocity = outDirection * EffectiveSpeed;
 
         var data = new ContactData
         {
-            incidentDirection = -outDirection,
-            contactPoint = Vector2.zero,
+            incidentDirection = pendingIncident.sqrMagnitude > 0.0001f ? pendingIncident.normalized : -outDirection,
+            contactPoint = pendingContactPoint,
             hitOffset = pendingHitOffset,
             ledgeSide = pendingLedgeSide
         };

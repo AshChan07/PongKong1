@@ -5,13 +5,9 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Builds a functional PowerUpHUD in the currently open scene and wires every
-// reference (manager, score, ledges, slot icons, texts, event channels).
-// Run via Tools ▸ Build PowerUp HUD. Re-running replaces the existing HUD.
 public static class PowerUpHUDBuilder
 {
     private const string EventsPath = "Assets/_Game/Events/";
-    private static readonly int[] Costs = { 1, 1, 2, 4 };
 
     [MenuItem("Tools/Build PowerUp HUD")]
     public static void Build()
@@ -24,16 +20,6 @@ public static class PowerUpHUDBuilder
             return;
         }
 
-        var manager = Object.FindFirstObjectByType<PowerUpManager>();
-        var score = Object.FindFirstObjectByType<ScoreManager>();
-        LedgeController p1Ledge = null, p2Ledge = null;
-        foreach (var l in Object.FindObjectsByType<LedgeController>(FindObjectsSortMode.None))
-        {
-            if (l.Side == PlayerSide.P1) p1Ledge = l;
-            else p2Ledge = l;
-        }
-
-        // Remove a previous HUD so the menu item is idempotent.
         var existing = Object.FindFirstObjectByType<PowerUpHUD>();
         if (existing != null)
             Object.DestroyImmediate(existing.gameObject);
@@ -50,34 +36,31 @@ public static class PowerUpHUDBuilder
         TextMeshProUGUI p2Lives = BuildText(root.transform, "P2 Lives", false, -146f, TextAlignmentOptions.TopRight);
 
         var so = new SerializedObject(hud);
-        SetRef(so, "powerUpManager", manager);
-        SetRef(so, "scoreManager", score);
-        SetRef(so, "p1Ledge", p1Ledge);
-        SetRef(so, "p2Ledge", p2Ledge);
         SetRef(so, "p1SpendableText", p1Sp);
         SetRef(so, "p2SpendableText", p2Sp);
         SetRef(so, "p1LivesText", p1Lives);
         SetRef(so, "p2LivesText", p2Lives);
         SetArray(so, "p1SlotIcons", p1Slots);
         SetArray(so, "p2SlotIcons", p2Slots);
-        SetRef(so, "onPowerUpPrimed", LoadEvent("OnPowerUpPrimed"));
-        SetRef(so, "onPowerUpActivated", LoadEvent("OnPowerUpActivated"));
-        SetRef(so, "onPowerUpDeactivated", LoadEvent("OnPowerUpDeactivated"));
+        SetRef(so, "onPowerUpPrimed", LoadEvent<PowerUpDataGameEvent>("OnPowerUpPrimed"));
+        SetRef(so, "onPowerUpActivated", LoadEvent<PowerUpDataGameEvent>("OnPowerUpActivated"));
+        SetRef(so, "onPowerUpDeactivated", LoadEvent<PowerUpDataGameEvent>("OnPowerUpDeactivated"));
+        SetRef(so, "onScoreStateUpdated", LoadEvent<ScoreStateGameEvent>("OnScoreStateUpdated"));
+        SetRef(so, "onLedgeLifeChangedDetailed", LoadEvent<LedgeLifeChangedGameEvent>("OnLedgeLifeChangedDetailed"));
+        SetRef(so, "onMatchRestarted", LoadEvent<GameEvent>("OnMatchRestarted"));
         so.ApplyModifiedPropertiesWithoutUndo();
 
         EditorSceneManager.MarkSceneDirty(root.scene);
         EditorSceneManager.SaveScene(root.scene);
         Selection.activeGameObject = root;
-        Debug.Log("PowerUp HUD built and wired. " +
-                  (manager == null ? "WARNING: no PowerUpManager found. " : "") +
-                  (score == null ? "WARNING: no ScoreManager found. " : ""));
+        Debug.Log("PowerUp HUD built and wired.");
     }
 
     private static Image[] BuildSlots(Transform parent, string label, bool left)
     {
         const float size = 48f, gap = 8f, margin = 20f, top = -60f;
-        var slots = new Image[4];
-        for (int i = 0; i < 4; i++)
+        var slots = new Image[Balance.PowerUpCount];
+        for (int i = 0; i < Balance.PowerUpCount; i++)
         {
             GameObject slot = NewUI($"{label} Slot {i + 1}", parent);
             var rt = slot.GetComponent<RectTransform>();
@@ -90,9 +73,8 @@ public static class PowerUpHUDBuilder
             img.color = new Color(0.3f, 0.3f, 0.3f, 0.5f);
             slots[i] = img;
 
-            // Slot label: quick-slot key number over its point cost.
             TextMeshProUGUI lbl = BuildLabel(slot.transform);
-            lbl.text = $"{i + 1}\n<size=10>{Costs[i]}pt</size>";
+            lbl.text = $"{i + 1}\n<size=10>{Balance.PowerUpCosts[i]}pt</size>";
         }
         return slots;
     }
@@ -155,9 +137,9 @@ public static class PowerUpHUDBuilder
             p.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
     }
 
-    private static PowerUpDataGameEvent LoadEvent(string assetName)
+    private static T LoadEvent<T>(string assetName) where T : ScriptableObject
     {
-        return AssetDatabase.LoadAssetAtPath<PowerUpDataGameEvent>(EventsPath + assetName + ".asset");
+        return AssetDatabase.LoadAssetAtPath<T>(EventsPath + assetName + ".asset");
     }
 }
 #endif

@@ -3,12 +3,6 @@ using UnityEngine.InputSystem;
 
 public class PowerUpManager : MonoBehaviour
 {
-    [Header("References")]
-    [SerializeField] private BallController ball;
-    [SerializeField] private LedgeController p1Ledge;
-    [SerializeField] private LedgeController p2Ledge;
-    [SerializeField] private ScoreManager scoreManager;
-
     [Header("Ball Dash")]
     [SerializeField] private float dashSpeedMultiplier = 3f;
 
@@ -31,10 +25,21 @@ public class PowerUpManager : MonoBehaviour
     [SerializeField] private PowerUpDataGameEvent onPowerUpActivated;
     [SerializeField] private PowerUpDataGameEvent onPowerUpDeactivated;
 
-    private static readonly int PowerUpCount = System.Enum.GetValues(typeof(PowerUpType)).Length;
-    private static readonly int[] Costs = { 1, 1, 2, 4 };
+    [SerializeField] private ScoreRequestGameEvent onRequestRecordScore;
+    [SerializeField] private SpendPointsGameEvent onSpendPointsRequested;
+    [SerializeField] private LedgeDashGameEvent onLedgeDashRequested;
+    [SerializeField] private LedgeDamageGameEvent onLedgeDamageRequested;
+    [SerializeField] private FloatGameEvent onBallSpeedMultiplierRequested;
+    [SerializeField] private FloatGameEvent onBallFlatSpeedRequested;
+    [SerializeField] private BoolGameEvent onBallDestroyerStateChanged;
+    [SerializeField] private BoolGameEvent onBallVanishStateChanged;
+    [SerializeField] private BoolGameEvent onBallVisibilityChanged;
+    [SerializeField] private GameEvent onMatchRestarted;
+    [SerializeField] private ScoreStateGameEvent onScoreStateUpdated;
+    [SerializeField] private Vector2GameEvent onBallPositionUpdated;
+    [SerializeField] private GameEvent onBallHitBoundary;
 
-    private PowerUpState[,] states = new PowerUpState[2, 4];
+    private readonly PowerUpState[,] states = new PowerUpState[2, Balance.PowerUpCount];
 
     private bool destroyerCarryOver;
     private PlayerSide destroyerOwner;
@@ -44,12 +49,23 @@ public class PowerUpManager : MonoBehaviour
     private float vanishTimer;
     private bool vanishVisible;
 
+    private int p1Spendable;
+    private int p2Spendable;
+    private Vector2 lastBallPosition;
+    private PlayerSide activeCourt;
+    private bool isBallInPlay;
+
     private void OnEnable()
     {
         if (onBallEnteredCourt != null) onBallEnteredCourt.OnRaised += HandleBallEnteredCourt;
         if (onBallExitedCourt != null) onBallExitedCourt.OnRaised += HandleBallExitedCourt;
         if (onBallHitLedge != null) onBallHitLedge.OnRaised += HandleBallHitLedge;
         if (onPointScored != null) onPointScored.OnRaised += HandlePointScored;
+
+        if (onScoreStateUpdated != null) onScoreStateUpdated.OnRaised += HandleScoreStateUpdated;
+        if (onBallPositionUpdated != null) onBallPositionUpdated.OnRaised += HandleBallPositionUpdated;
+        if (onBallHitBoundary != null) onBallHitBoundary.OnRaised += HandleBallHitBoundary;
+        if (onMatchRestarted != null) onMatchRestarted.OnRaised += HandleMatchRestarted;
     }
 
     private void OnDisable()
@@ -58,6 +74,35 @@ public class PowerUpManager : MonoBehaviour
         if (onBallExitedCourt != null) onBallExitedCourt.OnRaised -= HandleBallExitedCourt;
         if (onBallHitLedge != null) onBallHitLedge.OnRaised -= HandleBallHitLedge;
         if (onPointScored != null) onPointScored.OnRaised -= HandlePointScored;
+
+        if (onScoreStateUpdated != null) onScoreStateUpdated.OnRaised -= HandleScoreStateUpdated;
+        if (onBallPositionUpdated != null) onBallPositionUpdated.OnRaised -= HandleBallPositionUpdated;
+        if (onBallHitBoundary != null) onBallHitBoundary.OnRaised -= HandleBallHitBoundary;
+        if (onMatchRestarted != null) onMatchRestarted.OnRaised -= HandleMatchRestarted;
+    }
+
+    private void HandleScoreStateUpdated(ScoreStateData data)
+    {
+        p1Spendable = data.p1Spendable;
+        p2Spendable = data.p2Spendable;
+    }
+
+    private void HandleBallPositionUpdated(Vector2 position)
+    {
+        lastBallPosition = position;
+    }
+
+    private void HandleBallHitBoundary()
+    {
+        if (IsActive(activeCourt, PowerUpType.DestroyerBounce))
+        {
+            onBallFlatSpeedRequested?.Raise(destroyerSpeedPerBounce);
+        }
+    }
+
+    private void HandleMatchRestarted()
+    {
+        ResetAllStates();
     }
 
     private void Update()
@@ -71,16 +116,7 @@ public class PowerUpManager : MonoBehaviour
     private void ReadRestartInput()
     {
         if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
-            RestartMatch();
-    }
-
-    private void RestartMatch()
-    {
-        scoreManager.ResetMatch();
-        ResetAllStates();
-        ball.Restart();
-        p1Ledge.ResetLives();
-        p2Ledge.ResetLives();
+            onMatchRestarted?.Raise();
     }
 
     private void ReadPowerUpInput(PlayerSide side)
@@ -115,14 +151,21 @@ public class PowerUpManager : MonoBehaviour
         if (!ValidateStacking(side, type))
             return;
 
-        int cost = Costs[typeIdx];
-        if (!scoreManager.SpendPoints(side, cost))
+        int cost = Balance.PowerUpCosts[typeIdx];
+        int spendableBefore = side == PlayerSide.P1 ? p1Spendable : p2Spendable;
+        if (spendableBefore < cost)
+            return;
+
+        onSpendPointsRequested?.Raise(new SpendPointsData { side = side, amount = cost });
+
+        int spendableAfter = side == PlayerSide.P1 ? p1Spendable : p2Spendable;
+        if (spendableAfter >= spendableBefore)
             return;
 
         states[sideIdx, typeIdx] = PowerUpState.Primed;
         FireEvent(onPowerUpPrimed, type, side);
 
-        if (!ball.IsRespawning && ball.HasCourt && ball.CurrentCourt == side)
+        if (isBallInPlay && activeCourt == side)
             ActivatePowerUp(side, type);
     }
 
@@ -154,9 +197,11 @@ public class PowerUpManager : MonoBehaviour
 
     private void HandleBallEnteredCourt(PlayerSide court)
     {
+        activeCourt = court;
+        isBallInPlay = true;
         int sideIdx = (int)court;
 
-        for (int i = 0; i < PowerUpCount; i++)
+        for (int i = 0; i < Balance.PowerUpCount; i++)
         {
             if (states[sideIdx, i] != PowerUpState.Primed)
                 continue;
@@ -172,7 +217,7 @@ public class PowerUpManager : MonoBehaviour
     {
         int sideIdx = (int)court;
 
-        for (int i = 0; i < PowerUpCount; i++)
+        for (int i = 0; i < Balance.PowerUpCount; i++)
         {
             if (states[sideIdx, i] == PowerUpState.Inactive)
                 continue;
@@ -193,7 +238,7 @@ public class PowerUpManager : MonoBehaviour
         {
             destroyerCarryOver = true;
             destroyerOwner = court;
-            ball.SetDestroyerActive(true);
+            onBallDestroyerStateChanged?.Raise(true);
         }
     }
 
@@ -212,15 +257,15 @@ public class PowerUpManager : MonoBehaviour
         vanishOwner = owner;
         vanishTimer = 0f;
         vanishVisible = true;
-        ball.SetVanishActive(true);
-        ball.SetVisible(true);
+        onBallVanishStateChanged?.Raise(true);
+        onBallVisibilityChanged?.Raise(true);
     }
 
     private void StopVanishCycle()
     {
         vanishCycling = false;
-        ball.SetVanishActive(false);
-        ball.SetVisible(true);
+        onBallVanishStateChanged?.Raise(false);
+        onBallVisibilityChanged?.Raise(true);
     }
 
     private void HandleBallHitLedge(ContactData data)
@@ -229,23 +274,29 @@ public class PowerUpManager : MonoBehaviour
 
         if (states[sideIdx, (int)PowerUpType.ForceBounce] == PowerUpState.Active)
         {
-            ball.ApplySpeedMultiplier(forceBounceMultiplier);
+            onBallSpeedMultiplierRequested?.Raise(forceBounceMultiplier);
             states[sideIdx, (int)PowerUpType.ForceBounce] = PowerUpState.Inactive;
             FireEvent(onPowerUpDeactivated, PowerUpType.ForceBounce, data.ledgeSide);
         }
 
         if (states[sideIdx, (int)PowerUpType.DestroyerBounce] == PowerUpState.Active)
         {
-            ball.AddFlatSpeed(destroyerSpeedPerBounce);
-            FireEvent(onPowerUpActivated, PowerUpType.DestroyerBounce, data.ledgeSide);
+            onBallFlatSpeedRequested?.Raise(destroyerSpeedPerBounce);
         }
 
         if (destroyerCarryOver && data.ledgeSide != destroyerOwner)
         {
-            LedgeController hitLedge = data.ledgeSide == PlayerSide.P1 ? p1Ledge : p2Ledge;
-            hitLedge.TakeDamage(1);
+            if (onLedgeDamageRequested != null)
+            {
+                var damageData = new LedgeDamageData
+                {
+                    side = data.ledgeSide,
+                    damage = 1
+                };
+                onLedgeDamageRequested.Raise(damageData);
+            }
             destroyerCarryOver = false;
-            ball.SetDestroyerActive(false);
+            onBallDestroyerStateChanged?.Raise(false);
         }
 
         if (vanishCycling && data.ledgeSide != vanishOwner)
@@ -254,20 +305,37 @@ public class PowerUpManager : MonoBehaviour
 
     private void HandlePointScored(PlayerSide scorer)
     {
-        bool destroyer = destroyerCarryOver || IsActive(GetOpponent(scorer), PowerUpType.DestroyerBounce);
-
+        bool destroyerBonus = destroyerCarryOver || IsActive(GetOpponent(scorer), PowerUpType.DestroyerBounce);
         bool vanishActive = vanishCycling;
         bool vanishBonus = vanishActive && scorer == vanishOwner;
 
-        scoreManager.RecordScore(scorer, destroyer, vanishBonus, vanishActive);
+        if (onRequestRecordScore != null)
+        {
+            var data = new ScoreRequestData
+            {
+                scorer = scorer,
+                destroyerActive = destroyerBonus && !vanishActive,
+                vanishBonus = vanishBonus,
+                vanishActive = vanishActive
+            };
+            onRequestRecordScore.Raise(data);
+        }
+        isBallInPlay = false;
         ResetAllStates();
     }
 
     private void ExecuteBallDash(PlayerSide side)
     {
-        LedgeController ledge = side == PlayerSide.P1 ? p1Ledge : p2Ledge;
-        Vector2 ballPos = ball.GetPosition();
-        ledge.DashToY(ballPos.y, dashSpeedMultiplier);
+        if (onLedgeDashRequested != null)
+        {
+            var data = new LedgeDashData
+            {
+                side = side,
+                targetY = lastBallPosition.y,
+                dashSpeedMultiplier = dashSpeedMultiplier
+            };
+            onLedgeDashRequested.Raise(data);
+        }
 
         states[(int)side, (int)PowerUpType.BallDash] = PowerUpState.Inactive;
         FireEvent(onPowerUpDeactivated, PowerUpType.BallDash, side);
@@ -284,13 +352,13 @@ public class PowerUpManager : MonoBehaviour
         {
             vanishVisible = false;
             vanishTimer = 0f;
-            ball.SetVisible(false);
+            onBallVisibilityChanged?.Raise(false);
         }
         else if (!vanishVisible && vanishTimer >= vanishInvisibleDuration)
         {
             vanishVisible = true;
             vanishTimer = 0f;
-            ball.SetVisible(true);
+            onBallVisibilityChanged?.Raise(true);
         }
     }
 
@@ -298,7 +366,7 @@ public class PowerUpManager : MonoBehaviour
     {
         for (int s = 0; s < 2; s++)
         {
-            for (int t = 0; t < PowerUpCount; t++)
+            for (int t = 0; t < Balance.PowerUpCount; t++)
             {
                 if (states[s, t] != PowerUpState.Inactive)
                 {
@@ -309,7 +377,8 @@ public class PowerUpManager : MonoBehaviour
         }
 
         destroyerCarryOver = false;
-        ball.SetDestroyerActive(false);
+        onBallDestroyerStateChanged?.Raise(false);
+        isBallInPlay = false;
         StopVanishCycle();
     }
 
@@ -325,7 +394,7 @@ public class PowerUpManager : MonoBehaviour
 
     public int GetCost(PowerUpType type)
     {
-        return Costs[(int)type];
+        return Balance.PowerUpCosts[(int)type];
     }
 
     private PlayerSide GetOpponent(PlayerSide side)

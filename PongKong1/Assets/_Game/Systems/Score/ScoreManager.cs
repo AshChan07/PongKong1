@@ -6,22 +6,21 @@ public class ScoreManager : MonoBehaviour
     [SerializeField] private int winScore = 20;
     [SerializeField] private bool suddenDeathEnabled = true;
 
-    [Header("Points")]
-    [SerializeField] private int baseMissPoints = 2;
-
     [Header("Events")]
-    [SerializeField] private IntGameEvent onScoreChanged;
     [SerializeField] private PlayerSideGameEvent onMatchEnd;
     [SerializeField] private PointScoredDataGameEvent onPointScoredDetailed;
-
-    [Header("References")]
-    [SerializeField] private LedgeController p1Ledge;
-    [SerializeField] private LedgeController p2Ledge;
+    [SerializeField] private ScoreStateGameEvent onScoreStateUpdated;
+    [SerializeField] private LedgeLifeChangedGameEvent onLedgeLifeChangedDetailed;
+    [SerializeField] private ScoreRequestGameEvent onRequestRecordScore;
+    [SerializeField] private SpendPointsGameEvent onSpendPointsRequested;
+    [SerializeField] private GameEvent onMatchRestarted;
 
     private int p1Score;
     private int p2Score;
     private int p1Spendable;
     private int p2Spendable;
+    private int p1Lives = Balance.DefaultLives;
+    private int p2Lives = Balance.DefaultLives;
     private bool isGameOver;
     private bool isSuddenDeath;
 
@@ -33,21 +32,67 @@ public class ScoreManager : MonoBehaviour
     public bool IsGameOver => isGameOver;
     public bool IsSuddenDeath => isSuddenDeath;
 
+    private void OnEnable()
+    {
+        if (onLedgeLifeChangedDetailed != null)
+            onLedgeLifeChangedDetailed.OnRaised += HandleLedgeLifeChanged;
+        if (onRequestRecordScore != null)
+            onRequestRecordScore.OnRaised += HandleRequestRecordScore;
+        if (onSpendPointsRequested != null)
+            onSpendPointsRequested.OnRaised += HandleSpendPointsRequested;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised += HandleMatchRestarted;
+    }
+
+    private void OnDisable()
+    {
+        if (onLedgeLifeChangedDetailed != null)
+            onLedgeLifeChangedDetailed.OnRaised -= HandleLedgeLifeChanged;
+        if (onRequestRecordScore != null)
+            onRequestRecordScore.OnRaised -= HandleRequestRecordScore;
+        if (onSpendPointsRequested != null)
+            onSpendPointsRequested.OnRaised -= HandleSpendPointsRequested;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised -= HandleMatchRestarted;
+    }
+
+    private void HandleLedgeLifeChanged(LedgeLifeChangedData data)
+    {
+        if (data.side == PlayerSide.P1)
+            p1Lives = data.currentLives;
+        else if (data.side == PlayerSide.P2)
+            p2Lives = data.currentLives;
+    }
+
+    private void HandleRequestRecordScore(ScoreRequestData data)
+    {
+        RecordScore(data.scorer, data.destroyerActive, data.vanishBonus, data.vanishActive);
+    }
+
+    private void HandleSpendPointsRequested(SpendPointsData data)
+    {
+        SpendPoints(data.side, data.amount);
+    }
+
+    private void HandleMatchRestarted()
+    {
+        ResetMatch();
+    }
+
     public void RecordScore(PlayerSide scorer)
     {
         RecordScore(scorer, false, false, false);
     }
 
-    public void RecordScore(PlayerSide scorer, bool destroyerActive, bool vanishBonus, bool vanishPenalty)
+    public void RecordScore(PlayerSide scorer, bool destroyerActive, bool vanishBonus, bool vanishActive)
     {
         if (isGameOver)
             return;
 
-        LedgeController missedLedge = scorer == PlayerSide.P1 ? p2Ledge : p1Ledge;
-        bool brokenLedge = missedLedge != null && missedLedge.IsBroken;
+        bool brokenLedge = (scorer == PlayerSide.P1) ? (p2Lives <= 0) : (p1Lives <= 0);
 
         int points = CalculatePoints(destroyerActive, vanishBonus, brokenLedge);
-        int penalty = vanishPenalty ? 1 : 0;
+        int penalty = vanishActive ? Balance.VanishPenalty : 0;
 
         if (scorer == PlayerSide.P1)
         {
@@ -70,8 +115,6 @@ public class ScoreManager : MonoBehaviour
             }
         }
 
-        onScoreChanged?.Raise(TotalMatchScore);
-
         if (onPointScoredDetailed != null)
         {
             var data = new PointScoredData
@@ -79,28 +122,30 @@ public class ScoreManager : MonoBehaviour
                 scorer = scorer,
                 points = points,
                 isDestroyerActive = destroyerActive,
-                isVanishActive = vanishPenalty,
+                isVanishActive = vanishActive,
                 isBrokenLedge = brokenLedge
             };
             onPointScoredDetailed.Raise(data);
         }
 
         CheckWinCondition();
+
+        RaiseScoreStateUpdated();
     }
 
     private int CalculatePoints(bool destroyer, bool vanishBonus, bool brokenLedge)
     {
         if (vanishBonus && brokenLedge)
-            return 16;
+            return Balance.VanishBrokenPoints;
         if (vanishBonus)
-            return 8;
+            return Balance.VanishMissPoints;
         if (destroyer && brokenLedge)
-            return 8;
+            return Balance.DestroyerBrokenPoints;
         if (destroyer)
-            return 4;
+            return Balance.DestroyerMissPoints;
         if (brokenLedge)
-            return 4;
-        return baseMissPoints;
+            return Balance.BrokenLedgePoints;
+        return Balance.BaseMissPoints;
     }
 
     private void CheckWinCondition()
@@ -137,19 +182,24 @@ public class ScoreManager : MonoBehaviour
         if (isGameOver)
             return false;
 
+        bool spent = false;
         if (player == PlayerSide.P1 && p1Spendable >= cost)
         {
             p1Spendable -= cost;
-            return true;
+            spent = true;
         }
-
-        if (player == PlayerSide.P2 && p2Spendable >= cost)
+        else if (player == PlayerSide.P2 && p2Spendable >= cost)
         {
             p2Spendable -= cost;
-            return true;
+            spent = true;
         }
 
-        return false;
+        if (spent)
+        {
+            RaiseScoreStateUpdated();
+        }
+
+        return spent;
     }
 
     public int GetSpendable(PlayerSide player)
@@ -163,8 +213,29 @@ public class ScoreManager : MonoBehaviour
         p2Score = 0;
         p1Spendable = 0;
         p2Spendable = 0;
+        p1Lives = Balance.DefaultLives;
+        p2Lives = Balance.DefaultLives;
         isGameOver = false;
         isSuddenDeath = false;
-        onScoreChanged?.Raise(0);
+
+        RaiseScoreStateUpdated();
+    }
+
+    private void RaiseScoreStateUpdated()
+    {
+        if (onScoreStateUpdated != null)
+        {
+            var data = new ScoreStateData
+            {
+                p1Score = p1Score,
+                p2Score = p2Score,
+                p1Spendable = p1Spendable,
+                p2Spendable = p2Spendable,
+                totalMatchScore = TotalMatchScore,
+                isGameOver = isGameOver,
+                isSuddenDeath = isSuddenDeath
+            };
+            onScoreStateUpdated.Raise(data);
+        }
     }
 }

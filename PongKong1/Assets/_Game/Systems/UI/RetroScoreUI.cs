@@ -8,7 +8,7 @@ public class RetroScoreUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI p1ScoreText;
     [SerializeField] private TextMeshProUGUI p2ScoreText;
     [SerializeField] private TextMeshProUGUI totalScoreText;
-    [SerializeField] private ScoreManager scoreManager;
+    [SerializeField] private ScoreStateGameEvent onScoreStateUpdated;
 
     [Header("Retro Theme")]
     [SerializeField] private Color baseColor = new Color(0f, 1f, 0f, 1f);
@@ -29,67 +29,49 @@ public class RetroScoreUI : MonoBehaviour
     private Coroutine p1FlashRoutine;
     private Coroutine p2FlashRoutine;
     private Coroutine pulseRoutine;
-    private bool isFlashing;
+    private readonly bool[] flashing = new bool[2];
     private static readonly Color AmberColor = new Color(1f, 0.69f, 0f, 1f);
 
     private void Start()
     {
-        if (scoreManager == null)
-            scoreManager = FindFirstObjectByType<ScoreManager>();
-
-        if (scoreManager == null)
-            return;
-
-        lastP1Score = scoreManager.P1Score;
-        lastP2Score = scoreManager.P2Score;
         ApplyRetroStyling();
-        RefreshDisplay();
     }
 
     private void OnEnable()
     {
-        if (scoreManager == null) return;
-        lastP1Score = scoreManager.P1Score;
-        lastP2Score = scoreManager.P2Score;
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised += HandleScoreStateUpdated;
+
         if (enablePulse)
             pulseRoutine = StartCoroutine(PulseEffect());
     }
 
     private void OnDisable()
     {
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised -= HandleScoreStateUpdated;
+
         StopFlashRoutines();
         StopPulseRoutine();
     }
 
-    private void Update()
+    private void HandleScoreStateUpdated(ScoreStateData data)
     {
-        if (scoreManager == null) return;
+        bool p1Scored = data.p1Score > lastP1Score;
+        bool p2Scored = data.p2Score > lastP2Score;
 
-        RefreshDisplay();
+        lastP1Score = data.p1Score;
+        lastP2Score = data.p2Score;
 
-        int p1 = scoreManager.P1Score;
-        int p2 = scoreManager.P2Score;
-
-        if (p1 == lastP1Score && p2 == lastP2Score) return;
-
-        bool p1Scored = p1 > lastP1Score;
-        bool p2Scored = p2 > lastP2Score;
-
-        lastP1Score = p1;
-        lastP2Score = p2;
-
-        if (p1Scored) StartFlash(p1ScoreText, ref p1FlashRoutine);
-        if (p2Scored) StartFlash(p2ScoreText, ref p2FlashRoutine);
-    }
-
-    private void RefreshDisplay()
-    {
         if (p1ScoreText != null)
-            p1ScoreText.text = $"P1: {scoreManager.P1Score:00}  SP:{scoreManager.P1Spendable}";
+            p1ScoreText.text = $"P1: {data.p1Score:00}";
         if (p2ScoreText != null)
-            p2ScoreText.text = $"P2: {scoreManager.P2Score:00}  SP:{scoreManager.P2Spendable}";
+            p2ScoreText.text = $"P2: {data.p2Score:00}";
         if (totalScoreText != null)
-            totalScoreText.text = $"{scoreManager.TotalMatchScore}";
+            totalScoreText.text = $"{data.totalMatchScore}";
+
+        if (p1Scored) StartFlash(p1ScoreText, ref p1FlashRoutine, PlayerSide.P1);
+        if (p2Scored) StartFlash(p2ScoreText, ref p2FlashRoutine, PlayerSide.P2);
     }
 
     private void ApplyRetroStyling()
@@ -111,18 +93,19 @@ public class RetroScoreUI : MonoBehaviour
         }
     }
 
-    private void StartFlash(TextMeshProUGUI target, ref Coroutine routine)
+    private void StartFlash(TextMeshProUGUI target, ref Coroutine routine, PlayerSide side)
     {
         if (routine != null)
             StopCoroutine(routine);
-        routine = StartCoroutine(FlashText(target, routine));
+        routine = StartCoroutine(FlashText(target, side));
     }
 
-    private IEnumerator FlashText(TextMeshProUGUI target, Coroutine routine)
+    private IEnumerator FlashText(TextMeshProUGUI target, PlayerSide side)
     {
         if (target == null) yield break;
 
-        isFlashing = true;
+        int idx = (int)side;
+        flashing[idx] = true;
         Color full = useAmberTheme ? AmberColor : baseColor;
         Color dim = new Color(full.r, full.g, full.b, full.a * flashDimFactor);
         float interval = flashDuration / (flashCycles * 2f);
@@ -136,7 +119,7 @@ public class RetroScoreUI : MonoBehaviour
             yield return delay;
         }
 
-        isFlashing = false;
+        flashing[idx] = false;
     }
 
     private IEnumerator PulseEffect()
@@ -145,14 +128,12 @@ public class RetroScoreUI : MonoBehaviour
 
         while (true)
         {
-            if (!isFlashing)
-            {
-                float t = (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f;
-                float alpha = Mathf.Lerp(pulseMinAlpha, 1f, t);
-                Color pulsed = new Color(full.r, full.g, full.b, alpha);
-                if (p1ScoreText != null) p1ScoreText.color = pulsed;
-                if (p2ScoreText != null) p2ScoreText.color = pulsed;
-            }
+            float t = (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f;
+            float alpha = Mathf.Lerp(pulseMinAlpha, 1f, t);
+            Color pulsed = new Color(full.r, full.g, full.b, alpha);
+
+            if (!flashing[0] && p1ScoreText != null) p1ScoreText.color = pulsed;
+            if (!flashing[1] && p2ScoreText != null) p2ScoreText.color = pulsed;
 
             yield return null;
         }
@@ -162,6 +143,8 @@ public class RetroScoreUI : MonoBehaviour
     {
         if (p1FlashRoutine != null) { StopCoroutine(p1FlashRoutine); p1FlashRoutine = null; }
         if (p2FlashRoutine != null) { StopCoroutine(p2FlashRoutine); p2FlashRoutine = null; }
+        flashing[0] = false;
+        flashing[1] = false;
     }
 
     private void StopPulseRoutine()

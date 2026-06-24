@@ -12,9 +12,6 @@ public class LedgeController : MonoBehaviour
     [SerializeField] private float maxSpeed = 24f;
     [SerializeField] private float yBoundary = 4.5f;
 
-    [Header("References")]
-    [SerializeField] private ScoreManager scoreManager;
-
     [Header("Life")]
     [SerializeField] private int maxLives = 3;
     [SerializeField] private float shortenPercent = 0.1f;
@@ -24,7 +21,11 @@ public class LedgeController : MonoBehaviour
     [SerializeField] private float stretchSmoothness = 0.15f;
 
     [Header("Events")]
-    [SerializeField] private IntGameEvent onLedgeLifeChanged;
+    [SerializeField] private ScoreStateGameEvent onScoreStateUpdated;
+    [SerializeField] private LedgeLifeChangedGameEvent onLedgeLifeChangedDetailed;
+    [SerializeField] private LedgeDashGameEvent onLedgeDashRequested;
+    [SerializeField] private LedgeDamageGameEvent onLedgeDamageRequested;
+    [SerializeField] private GameEvent onMatchRestarted;
 
     private Rigidbody2D rb;
     private float movementInput;
@@ -34,6 +35,7 @@ public class LedgeController : MonoBehaviour
     private bool isDashing;
     private float dashTargetY;
     private float dashSpeed;
+    private int totalMatchScore;
 
     public PlayerSide Side => side;
     public int CurrentLives => currentLives;
@@ -43,8 +45,7 @@ public class LedgeController : MonoBehaviour
     {
         get
         {
-            int total = scoreManager != null ? scoreManager.TotalMatchScore : 0;
-            return Mathf.Min(speed + total * speedScalingFactor, maxSpeed);
+            return Mathf.Min(speed + totalMatchScore * speedScalingFactor, maxSpeed);
         }
     }
 
@@ -55,11 +56,58 @@ public class LedgeController : MonoBehaviour
         rb.constraints = RigidbodyConstraints2D.FreezeRotation | RigidbodyConstraints2D.FreezePositionX;
         currentLives = maxLives;
 
-        if (scoreManager == null)
-            scoreManager = FindFirstObjectByType<ScoreManager>();
-
         originalScale = transform.localScale;
         targetScale = originalScale;
+    }
+
+    private void OnEnable()
+    {
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised += HandleScoreState;
+        if (onLedgeDashRequested != null)
+            onLedgeDashRequested.OnRaised += HandleLedgeDashRequested;
+        if (onLedgeDamageRequested != null)
+            onLedgeDamageRequested.OnRaised += HandleLedgeDamageRequested;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised += HandleMatchRestarted;
+    }
+
+    private void OnDisable()
+    {
+        if (onScoreStateUpdated != null)
+            onScoreStateUpdated.OnRaised -= HandleScoreState;
+        if (onLedgeDashRequested != null)
+            onLedgeDashRequested.OnRaised -= HandleLedgeDashRequested;
+        if (onLedgeDamageRequested != null)
+            onLedgeDamageRequested.OnRaised -= HandleLedgeDamageRequested;
+        if (onMatchRestarted != null)
+            onMatchRestarted.OnRaised -= HandleMatchRestarted;
+    }
+
+    private void HandleScoreState(ScoreStateData data)
+    {
+        totalMatchScore = data.totalMatchScore;
+    }
+
+    private void HandleLedgeDashRequested(LedgeDashData data)
+    {
+        if (data.side == side)
+        {
+            DashToY(data.targetY, data.dashSpeedMultiplier);
+        }
+    }
+
+    private void HandleLedgeDamageRequested(LedgeDamageData data)
+    {
+        if (data.side == side)
+        {
+            TakeDamage(data.damage);
+        }
+    }
+
+    private void HandleMatchRestarted()
+    {
+        ResetLives();
     }
 
     private void Update()
@@ -81,28 +129,27 @@ public class LedgeController : MonoBehaviour
             rb.linearVelocity = new Vector2(0f, smoothedY);
         }
 
-        float clampedY = Mathf.Clamp(transform.position.y, -yBoundary, yBoundary);
-        transform.position = new Vector2(transform.position.x, clampedY);
+        float clampedY = Mathf.Clamp(rb.position.y, -yBoundary, yBoundary);
+        if (!Mathf.Approximately(rb.position.y, clampedY))
+            rb.MovePosition(new Vector2(rb.position.x, clampedY));
 
         CalculateStretch();
     }
 
     private void ProcessDash()
     {
-        float currentY = transform.position.y;
-        float diff = dashTargetY - currentY;
+        float diff = dashTargetY - rb.position.y;
         float step = dashSpeed * Time.fixedDeltaTime;
 
         if (Mathf.Abs(diff) <= step)
         {
-            transform.position = new Vector2(transform.position.x, dashTargetY);
+            rb.MovePosition(new Vector2(rb.position.x, dashTargetY));
             rb.linearVelocity = Vector2.zero;
             isDashing = false;
             return;
         }
 
-        float dir = Mathf.Sign(diff);
-        rb.linearVelocity = new Vector2(0f, dir * dashSpeed);
+        rb.linearVelocity = new Vector2(0f, Mathf.Sign(diff) * dashSpeed);
     }
 
     public void DashToY(float targetY, float dashSpeedMultiplier)
@@ -139,7 +186,7 @@ public class LedgeController : MonoBehaviour
 
     private Vector3 GetBaseScale()
     {
-        if (currentLives == 1)
+        if (currentLives <= 1)
         {
             return new Vector3(
                 originalScale.x,
@@ -183,21 +230,45 @@ public class LedgeController : MonoBehaviour
             return;
 
         currentLives = Mathf.Max(0, currentLives - damage);
-        onLedgeLifeChanged?.Raise(currentLives);
+        
+        if (onLedgeLifeChangedDetailed != null)
+        {
+            var data = new LedgeLifeChangedData
+            {
+                side = side,
+                currentLives = currentLives,
+                maxLives = maxLives,
+                isBroken = IsBroken
+            };
+            onLedgeLifeChangedDetailed.Raise(data);
+        }
+
         UpdateScaleForLife();
     }
 
     public void ResetLives()
     {
         currentLives = maxLives;
-        onLedgeLifeChanged?.Raise(currentLives);
+        
+        if (onLedgeLifeChangedDetailed != null)
+        {
+            var data = new LedgeLifeChangedData
+            {
+                side = side,
+                currentLives = currentLives,
+                maxLives = maxLives,
+                isBroken = IsBroken
+            };
+            onLedgeLifeChangedDetailed.Raise(data);
+        }
+
         transform.localScale = originalScale;
         targetScale = originalScale;
     }
 
     private void UpdateScaleForLife()
     {
-        if (currentLives == 1)
+        if (currentLives <= 1)
         {
             Vector3 shortened = GetBaseScale();
             transform.localScale = shortened;
