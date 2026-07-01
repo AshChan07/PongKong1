@@ -104,3 +104,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Photon app credentials are local machine configuration.
+**/PhotonServerSettings.asset
+
+# Do not commit Photon sample scenes/scripts into the game build source.
+**/Photon/**/Demos/
