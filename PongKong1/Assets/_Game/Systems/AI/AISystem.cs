@@ -98,7 +98,12 @@ namespace PongKong.Systems.AI
             float dt = Time.time - lastBallUpdateTime;
             if (dt > 0f)
             {
-                calculatedBallVelocity = (position - lastBallPosition) / dt;
+                Vector2 displacement = position - lastBallPosition;
+                // Ignore large teleports (e.g. when the ball respawns at the center)
+                if (displacement.magnitude < 5f)
+                {
+                    calculatedBallVelocity = displacement / dt;
+                }
             }
             
             lastBallPosition = position;
@@ -148,19 +153,21 @@ namespace PongKong.Systems.AI
          
             float timeToIntercept = Mathf.Abs((aiLedgeX - currentBallPosition.x) / calculatedBallVelocity.x);
             float predictedY = currentBallPosition.y + (calculatedBallVelocity.y * timeToIntercept);
-            float arenaHeight = arenaTopY - arenaBottomY;
             
-            
-            while (predictedY > arenaTopY || predictedY < arenaBottomY)
+            // Your ball physics currently BOUNCES off the top/bottom walls, it doesn't wrap!
+            // We simulate that bounce here so the AI tracks it perfectly.
+            int maxBounces = 100;
+            while ((predictedY > arenaTopY || predictedY < arenaBottomY) && maxBounces > 0)
             {
                 if (predictedY > arenaTopY)
                 {
-                    predictedY -= arenaHeight;
+                    predictedY = arenaTopY - (predictedY - arenaTopY); // Bounce down
                 }
                 else if (predictedY < arenaBottomY)
                 {
-                    predictedY += arenaHeight;
+                    predictedY = arenaBottomY + (arenaBottomY - predictedY); // Bounce up
                 }
+                maxBounces--;
             }
 
             return new Vector2(aiLedgeX, predictedY);
