@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using PongKong.Systems.Ledge;
 
 namespace PongKong.Systems.AI
 {
@@ -11,7 +12,6 @@ namespace PongKong.Systems.AI
     }
 
     
-    public enum PlayerSide { Player1, Player2 }
     public enum PowerUpType { BallDash, ForceBounce, DestroyerBounce, BallVanish }
 
     public struct AIAction
@@ -28,7 +28,13 @@ namespace PongKong.Systems.AI
         public float arenaBottomY = -10f;
         public float aiLedgeX = 8.5f; 
 
-        
+        public AILedgeController aiLedgeController;
+
+        // Event Channels
+        public Vector2GameEvent onBallPositionUpdated;
+        public PlayerSideGameEvent onBallEnteredCourt;
+        public AIActionGameEvent onAIDecision;
+        public PowerUpPrimedGameEvent onPowerUpPrimed;
 
         [Header("Ball State")]
         [SerializeField] private Vector2 currentBallPosition;
@@ -49,11 +55,17 @@ namespace PongKong.Systems.AI
         private void Start()
         {
             ApplyDifficultyParameters();
+            
+            // Subscribe to EventBus here:
+            if (onBallPositionUpdated != null) onBallPositionUpdated.OnRaised += HandleBallPositionUpdated;
+            if (onBallEnteredCourt != null) onBallEnteredCourt.OnRaised += HandleBallEnteredCourt;
         }
 
         private void OnDestroy()
         {
-            
+            // Unsubscribe from EventBus here:
+            if (onBallPositionUpdated != null) onBallPositionUpdated.OnRaised -= HandleBallPositionUpdated;
+            if (onBallEnteredCourt != null) onBallEnteredCourt.OnRaised -= HandleBallEnteredCourt;
         }
 
         private void ApplyDifficultyParameters()
@@ -168,6 +180,15 @@ namespace PongKong.Systems.AI
         private void EmitAIDecision()
         {
             AIAction action = new AIAction { MoveTarget = predictedInterceptPoint };
+
+            // Emit to EventBus:
+            if (onAIDecision != null) onAIDecision.Raise(action);
+
+            // Quick direct reference for testing (instead of EventBus)
+            if (aiLedgeController != null) 
+            {
+                aiLedgeController.HandleAIDecision(action);
+            }
         }
 
         private int GetAIPoints() { 
@@ -281,6 +302,8 @@ namespace PongKong.Systems.AI
 
         private void PrimePowerUp(PowerUpType powerUp)
         {
+            // Simulate queueing the power-up to the EventBus
+            if (onPowerUpPrimed != null) onPowerUpPrimed.Raise(powerUp, aiSide);
             Debug.Log($"[AISystem] Difficulty: {difficulty} - Priming PowerUp: {powerUp}");
         }
     }
