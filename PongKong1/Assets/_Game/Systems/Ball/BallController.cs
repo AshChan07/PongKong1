@@ -20,6 +20,8 @@ public class BallController : MonoBehaviour
     [SerializeField] private float respawnDelay = 1.5f;
 
     [Header("Events")]
+    [SerializeField] private Vector2GameEvent onBallPositionUpdated;
+    [SerializeField] private PlayerSideGameEvent onBallEnteredCourt;
     [SerializeField] private Vector2GameEvent onBallLaunched;
     [SerializeField] private ContactDataGameEvent onBallHitLedge;
     [SerializeField] private IntGameEvent onScoreChanged;
@@ -35,6 +37,7 @@ public class BallController : MonoBehaviour
     private float pendingHitOffset;
     private PlayerSide pendingLedgeSide;
     private bool isRespawning;
+    private PlayerSide currentCourtSide;
 
     private void Awake()
     {
@@ -105,6 +108,23 @@ public class BallController : MonoBehaviour
             RecordScore(scorer);
             ResetAndRespawn();
         }
+
+        // Broadcast position for the AI to track
+        if (onBallPositionUpdated != null)
+        {
+            onBallPositionUpdated.Raise(pos);
+        }
+
+        // Detect if ball crossed the center line to broadcast court entry
+        PlayerSide newSide = pos.x > 0f ? PlayerSide.P2 : PlayerSide.P1;
+        if (newSide != currentCourtSide)
+        {
+            currentCourtSide = newSide;
+            if (onBallEnteredCourt != null)
+            {
+                onBallEnteredCourt.Raise(currentCourtSide);
+            }
+        }
     }
 
     public void Launch()
@@ -124,6 +144,7 @@ public class BallController : MonoBehaviour
     private IEnumerator RespawnSequence()
     {
         isRespawning = true;
+        currentCourtSide = PlayerSide.P1; // Will update accurately on launch
         rb.linearVelocity = Vector2.zero;
         transform.position = Vector2.zero;
         rb.simulated = false;

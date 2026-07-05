@@ -23,7 +23,7 @@ namespace PongKong.Systems.AI
     {
         [Header("Configuration")]
         public AIDifficulty difficulty = AIDifficulty.Medium;
-        public PlayerSide aiSide = PlayerSide.Player2; 
+        public PlayerSide aiSide = PlayerSide.P2; 
         public float arenaTopY = 10f;
         public float arenaBottomY = -10f;
         public float aiLedgeX = 8.5f; 
@@ -109,7 +109,7 @@ namespace PongKong.Systems.AI
                 lastReactionTime = Time.time;
 
                 
-                bool isMovingTowardsAI = (aiSide == PlayerSide.Player2 && calculatedBallVelocity.x > 0) || (aiSide == PlayerSide.Player1 && calculatedBallVelocity.x < 0);
+                bool isMovingTowardsAI = (aiSide == PlayerSide.P2 && calculatedBallVelocity.x > 0) || (aiSide == PlayerSide.P1 && calculatedBallVelocity.x < 0);
 
                 if (isMovingTowardsAI)
                 {

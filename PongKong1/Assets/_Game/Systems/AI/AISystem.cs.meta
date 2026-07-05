@@ -1,2 +1,16 @@
 fileFormatVersion: 2
 guid: 89784b95316f4a04882930e58024b711
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - aiLedgeController: {instanceID: 0}
+  - onBallPositionUpdated: {instanceID: 0}
+  - onBallEnteredCourt: {instanceID: 0}
+  - onAIDecision: {instanceID: 0}
+  - onPowerUpPrimed: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

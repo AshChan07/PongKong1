@@ -537,6 +537,10 @@ MonoBehaviour:
   arenaBottomY: -10
   aiLedgeX: 8.5
   aiLedgeController: {fileID: 172874350}
+  onBallPositionUpdated: {fileID: 11400000, guid: 5ad9a1d024120eb4c9dc2544256ba407, type: 2}
+  onBallEnteredCourt: {fileID: 11400000, guid: cec528ca18c0dab4d9ccf78bab33ed81, type: 2}
+  onAIDecision: {fileID: 11400000, guid: bc74f2d38805f344b9c8cb4c5e8a2b6e, type: 2}
+  onPowerUpPrimed: {fileID: 11400000, guid: d51dd71c8a465f34988fd7f5c84ef981, type: 2}
   currentBallPosition: {x: 0, y: 0}
   calculatedBallVelocity: {x: 0, y: 0}
   predictedInterceptPoint: {x: 0, y: 0}
@@ -780,6 +784,8 @@ MonoBehaviour:
   arenaWidth: 16
   deflectionMultiplier: 1.5
   respawnDelay: 1.5
+  onBallPositionUpdated: {fileID: 11400000, guid: 5ad9a1d024120eb4c9dc2544256ba407, type: 2}
+  onBallEnteredCourt: {fileID: 11400000, guid: cec528ca18c0dab4d9ccf78bab33ed81, type: 2}
   onBallLaunched: {fileID: 11400000, guid: ffa5d22f11351de7d93ae10a8f19aa7c, type: 2}
   onBallHitLedge: {fileID: 11400000, guid: 2182d08f293d3fd4590be99711f58620, type: 2}
   onScoreChanged: {fileID: 11400000, guid: 83050cd4cc21fa913a01a9dab822f382, type: 2}
