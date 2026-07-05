@@ -531,10 +531,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 89784b95316f4a04882930e58024b711, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  difficulty: 1
+  difficulty: 2
   aiSide: 1
-  arenaTopY: 10
-  arenaBottomY: -10
+  arenaTopY: 5
+  arenaBottomY: -5
   aiLedgeX: 8.5
   aiLedgeController: {fileID: 172874350}
   onBallPositionUpdated: {fileID: 11400000, guid: 5ad9a1d024120eb4c9dc2544256ba407, type: 2}
@@ -558,6 +558,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   movementSpeed: 8
+  yBoundary: 4.5
 --- !u!1 &311551353
 GameObject:
   m_ObjectHideFlags: 0

@@ -8,6 +8,7 @@ namespace PongKong.Systems.Ledge
     {
         [Header("Settings")]
         public float movementSpeed = 8f; // The dev plan specifies 8 units/sec base speed
+        public float yBoundary = 4.5f;   // Prevents the paddle from leaving the screen
         
         // Event Channel reference:
         // public AIActionEventChannel onAIDecision;
@@ -48,6 +49,9 @@ namespace PongKong.Systems.Ledge
             Vector2 currentPos = rb.position;
             currentPos.y = Mathf.MoveTowards(currentPos.y, targetY, movementSpeed * Time.fixedDeltaTime);
             
+            // Clamp so the paddle doesn't physically leave the screen boundaries
+            currentPos.y = Mathf.Clamp(currentPos.y, -yBoundary, yBoundary);
+
             rb.MovePosition(currentPos);
         }
     }
